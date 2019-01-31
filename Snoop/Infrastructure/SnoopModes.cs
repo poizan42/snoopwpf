@@ -21,5 +21,7 @@ namespace Snoop.Infrastructure
         public static bool SwallowExceptions { get; set; }
 
         public static bool IgnoreExceptions { get; set; }
+
+        public static int ConnectTimeout { get; set; } = 10000;
 	}
 }

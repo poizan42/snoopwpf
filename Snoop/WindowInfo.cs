@@ -4,10 +4,15 @@
     using System.Collections.Generic;
     using System.ComponentModel;
     using System.Diagnostics;
+    using System.IO.Pipes;
     using System.Linq;
     using System.Runtime.InteropServices;
     using System.Text.RegularExpressions;
+    using System.Threading;
     using System.Windows.Input;
+    using System.Windows.Threading;
+    using Snoop.Infrastructure;
+    using Snoop.Ipc;
 
     public class WindowInfo
 	{
@@ -194,14 +199,39 @@
 
 			try
 			{
-				Injector.Launch(this, typeof(SnoopUI).Assembly, typeof(SnoopUI).FullName, "GoBabyGo");
+				NamedPipeServerStream pipeStream = new NamedPipeServerStream("snoop-" + this.OwningProcess.Id, PipeDirection.InOut,
+					1, PipeTransmissionMode.Message, PipeOptions.Asynchronous);
+				Injector.Launch(this, typeof(SnoopUI).Assembly, typeof(SnoopUIServer).FullName, "GoBabyGo");
+				var connectResult = pipeStream.BeginWaitForConnection(_ => { }, null);
+				Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
+				ThreadPool.RegisterWaitForSingleObject(connectResult.AsyncWaitHandle,
+					(_, timedOut) =>
+					{
+						var op = dispatcher.BeginInvoke((Action)(() =>
+							this.SnoopCallback(pipeStream, connectResult, timedOut)));
+					}, connectResult, SnoopModes.ConnectTimeout, true);
 			}
 			catch (Exception e)
 			{
 			    this.OnFailedToAttach(e);
 			}
+		}
 
+		private void SnoopCallback(NamedPipeServerStream pipeStream, IAsyncResult connectResult, bool timedOut)
+		{
 			Mouse.OverrideCursor = null;
+			if (timedOut)
+			{
+				try { pipeStream.Dispose(); } catch { }
+				this.OnFailedToAttach(new TimeoutException("Timed out waiting for injection to complete."));
+				return;
+			}
+
+			pipeStream.EndWaitForConnection(connectResult);
+			SnoopUI snoopUI = new SnoopUI();
+			ServerController serverController = new ServerController(pipeStream);
+			ClientHandler clientHandler = new ClientHandler(pipeStream, serverController, snoopUI);
+			clientHandler.Run();
 		}
 
 		public void Magnify()

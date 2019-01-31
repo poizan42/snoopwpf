@@ -79,7 +79,7 @@ namespace Snoop
 		    }
 
 		    if (ownerWindow != null
-		        && ownerWindow.Dispatcher != ownedWindow.Dispatcher)
+		        && ownerWindow.Dispatcher != ownedWindow?.Dispatcher)
 		    {
 		        return null;
 		    }
